@@ -44,6 +44,18 @@
   #lb .nav { position:absolute; top:50%; transform:translateY(-50%); background:rgba(255,255,255,.15); color:#fff; border:none; font-size:28px; padding:10px 14px; }
   #lb .prev { left:8px; } #lb .next { right:8px; }
   #lb .close { position:absolute; top:10px; right:12px; background:rgba(255,255,255,.15); color:#fff; border:none; font-size:20px; }
+  .s.cur { border-color:var(--accent); background:var(--sel); }
+  .pick { color:var(--sub); padding:40px 0; text-align:center; }
+  /* 広い画面：左にシリーズ一覧を出したまま、右で画像を見る */
+  @media (min-width:900px) {
+    main { display:grid; grid-template-columns:300px 1fr; gap:18px; max-width:1500px; align-items:start; }
+    #list, #list[hidden] { display:block; position:sticky; top:96px; max-height:calc(100vh - 110px); overflow:auto; padding-right:4px; }
+    #list .series { grid-template-columns:1fr; gap:5px; }
+    #list .s { padding:7px 10px; font-size:14px; }
+    #detail, #detail[hidden] { display:block; min-width:0; }
+    .bar .back { display:none; }
+    .bar { top:96px; }
+  }
   @media (max-width:600px) { #lb .lbimg { padding:12px 8px; } #lb .nav { top:auto; bottom:70px; transform:none; } }
 </style>
 </head>
@@ -55,7 +67,7 @@
 <main>
   <div id="list"><div class="msg">読み込み中…<span id="slow" hidden><br>時間がかかっています。<a href="" onclick="location.reload();return false">再読み込み</a>してください。
     それでも表示されない場合は、別のブラウザ（Chrome・Edge など）でお試しください。</span></div></div>
-  <div id="detail" hidden></div>
+  <div id="detail" hidden><div class="pick">左の一覧からシリーズを選んでください</div></div>
 </main>
 <div id="lb" hidden>
   <button class="close" onclick="lbClose()">✕</button>
@@ -116,14 +128,15 @@ call('getAll').then(d => {
 }).catch(() => call('getSeries').then(s => { if (!booted) { SERIES = s; boot(); } }))
   .catch(e => { if (!booted) $('#list').innerHTML = '<div class="msg">読み込みに失敗しました（' + esc(e.message) + '）。<a href="" onclick="location.reload();return false">再読み込み</a>してください。</div>'; });
 
-$('#q').addEventListener('input', () => { if (CUR) back(); renderList(); });
+const WIDE = matchMedia('(min-width:900px)');
+$('#q').addEventListener('input', () => { if (CUR && !WIDE.matches) back(); renderList(); });
 
 function renderList() {
   const q = norm($('#q').value.trim());
   const m = q.match(/\d{4}/);
   const hit = SERIES.filter(s => !q || (m ? s.key === m[0] : norm(s.key + ' ' + s.labels.join(' ')).includes(q)));
   $('#list').innerHTML = hit.length ? '<div class="series">' + hit.map(s =>
-    `<div class="s" data-k="${esc(s.key)}">${/^\d{4}$/.test(s.key) ? '<b>' + s.key + '</b>' : ''}${esc(s.labels.join(' / '))}</div>`).join('') + '</div>'
+    `<div class="s${CUR && CUR.key === s.key ? ' cur' : ''}" data-k="${esc(s.key)}">${/^\d{4}$/.test(s.key) ? '<b>' + s.key + '</b>' : ''}${esc(s.labels.join(' / '))}</div>`).join('') + '</div>'
     : '<div class="msg">見つかりませんでした</div>';
   document.querySelectorAll('.s').forEach(el => el.onclick = () => open(el.dataset.k));
 }
@@ -131,6 +144,7 @@ function renderList() {
 function open(key) {
   history.replaceState(null, '', '?s=' + encodeURIComponent(key));
   CUR = SERIES.find(s => s.key === key); SEL.clear(); FILES = [];
+  document.querySelectorAll('.s').forEach(el => el.classList.toggle('cur', el.dataset.k === key));
   $('#list').hidden = true; $('#detail').hidden = false;
   $('#detail').innerHTML = '<div class="msg">画像を探しています…</div>';
   window.scrollTo(0, 0);
@@ -146,7 +160,7 @@ function back() { history.replaceState(null, '', location.pathname); CUR = null;
 
 function renderDetail() {
   const title = (/^\d{4}$/.test(CUR.key) ? CUR.key + ' ' : '') + CUR.labels.join(' / ');
-  let html = `<div class="bar"><button onclick="back()">← 一覧</button><h2>${esc(title)}</h2>
+  let html = `<div class="bar"><button class="back" onclick="back()">← 一覧</button><h2>${esc(title)}</h2>
     <span>${FILES.length}枚</span>
     <button onclick="selAll()">すべて選択</button><button onclick="SEL.clear();paint()">選択解除</button>
     <button class="primary" id="zipb" onclick="dlZip()" disabled>選択した画像をダウンロード</button><span id="prog"></span></div>`;
