@@ -53,7 +53,8 @@
   <input id="q" type="search" placeholder="品番・シリーズ番号（例: 1544）・シリーズ名で検索" autocomplete="off">
 </header>
 <main>
-  <div id="list"><div class="msg">読み込み中…</div></div>
+  <div id="list"><div class="msg">読み込み中…<span id="slow" hidden><br>時間がかかっています。<a href="" onclick="location.reload();return false">再読み込み</a>してください。
+    それでも表示されない場合は、別のブラウザ（Chrome・Edge など）でお試しください。</span></div></div>
   <div id="detail" hidden></div>
 </main>
 <div id="lb" hidden>
@@ -65,6 +66,7 @@
     <button id="lbsel" onclick="lbToggle()">選択に追加</button>
     <button class="primary" onclick="dlOne(FILES[LB].id)">この画像をダウンロード</button></div>
 </div>
+<script>setTimeout(function () { var s = document.getElementById('slow'); if (s && !window.__booted) s.hidden = false; }, 15000);</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 let LB = -1, SERIES = [], FILES = [], CUR = null, SEL = new Set(), THUMB = {}, pending = new Set(), timer = null;
@@ -80,7 +82,13 @@ const ROUTE = {
   getAll: () => ({ api: 'all' }),
 };
 async function call(fn, ...a) {
-  const r = await fetch(API + '?' + new URLSearchParams(ROUTE[fn](...a)));
+  // 返事が来ないまま止まらないよう、時間を区切る（画像本体は大きいので長め）
+  const ctl = new AbortController(), limit = fn === 'getFile' ? 120000 : 25000;
+  const timer = setTimeout(() => ctl.abort(), limit);
+  let r;
+  try { r = await fetch(API + '?' + new URLSearchParams(ROUTE[fn](...a)), { signal: ctl.signal }); }
+  catch (e) { throw new Error(e.name === 'AbortError' ? '時間内に読み込めませんでした' : '通信できませんでした（ネットワークの制限の可能性があります）'); }
+  finally { clearTimeout(timer); }
   if (!r.ok) throw new Error('通信に失敗しました（' + r.status + '）');
   const t = await r.text();
   try { return JSON.parse(t); } catch (e) { throw new Error('サーバーの応答を読めませんでした'); }
@@ -93,7 +101,7 @@ let ALLF = null, booted = false;
 const LS = 'hw_images_all_v1';
 function useAll(d) { SERIES = d.series; ALLF = d.files; }
 function boot() {
-  if (booted) return; booted = true;
+  if (booted) return; booted = true; window.__booted = true;
   renderList();
   // ?s=1544 で開かれたら、そのシリーズを最初から表示する
   const k = new URLSearchParams(location.search).get('s');
@@ -106,7 +114,7 @@ call('getAll').then(d => {
   useAll(d);
   if (!booted) boot(); else if (!CUR) renderList();
 }).catch(() => call('getSeries').then(s => { if (!booted) { SERIES = s; boot(); } }))
-  .catch(e => { if (!booted) $('#list').innerHTML = '<div class="msg">読み込みに失敗しました: ' + esc(e.message) + '</div>'; });
+  .catch(e => { if (!booted) $('#list').innerHTML = '<div class="msg">読み込みに失敗しました（' + esc(e.message) + '）。<a href="" onclick="location.reload();return false">再読み込み</a>してください。</div>'; });
 
 $('#q').addEventListener('input', () => { if (CUR) back(); renderList(); });
 
