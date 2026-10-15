@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ハートウエル 商品画像</title>
+<meta name="description" content="ハートウエル商品のEC掲載用画像をダウンロードできます">
+<meta name="robots" content="noindex">
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#222; --sub:#777; --line:#e2e0db; --accent:#2f6f5e; --sel:#e6f1ed; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif; font-size:15px; }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:14px 16px; position:sticky; top:0; z-index:5; }
+  h1 { font-size:17px; margin:0 0 10px; font-weight:600; }
+  h1 small { color:var(--sub); font-weight:400; font-size:12px; margin-left:8px; }
+  #q { width:100%; max-width:520px; padding:10px 12px; font-size:16px; border:1px solid var(--line); border-radius:8px; }
+  main { padding:16px; max-width:1200px; margin:0 auto; }
+  .series { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; }
+  .s { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 12px; cursor:pointer; }
+  .s:hover { border-color:var(--accent); }
+  .s b { color:var(--accent); margin-right:6px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; position:sticky; top:95px; background:var(--bg); padding:8px 0; z-index:4; }
+  .bar h2 { font-size:16px; margin:0 12px 0 0; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button:disabled { opacity:.5; cursor:default; }
+  .group { margin:18px 0 6px; color:var(--sub); font-size:13px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+  .it { background:var(--card); border:2px solid transparent; border-radius:8px; overflow:hidden; cursor:pointer; position:relative; }
+  .it.on { border-color:var(--accent); background:var(--sel); }
+  .it .ph { aspect-ratio:1; background:#eee center/contain no-repeat; }
+  .it .nm { font-size:11px; padding:4px 6px; color:var(--sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .it .ck { position:absolute; top:6px; left:6px; width:22px; height:22px; border-radius:50%; background:#fff; border:2px solid #bbb; }
+  .it.on .ck { background:var(--accent); border-color:var(--accent); }
+  .it .dl { position:absolute; top:6px; right:6px; padding:2px 8px; font-size:12px; opacity:.9; }
+  .msg { color:var(--sub); padding:20px 0; }
+  #prog { font-size:13px; color:var(--sub); }
+  .it .ck { cursor:pointer; z-index:2; }
+  #lb { position:fixed; inset:0; background:rgba(20,20,20,.92); z-index:20; display:flex; flex-direction:column; }
+  #lb[hidden] { display:none; }
+  #lb .lbimg { flex:1; display:flex; align-items:center; justify-content:center; min-height:0; padding:12px 56px; }
+  #lb img { max-width:100%; max-height:100%; object-fit:contain; background:#fff; }
+  #lb .lbbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:center; padding:10px 16px 16px; color:#ddd; font-size:13px; }
+  #lb .nav { position:absolute; top:50%; transform:translateY(-50%); background:rgba(255,255,255,.15); color:#fff; border:none; font-size:28px; padding:10px 14px; }
+  #lb .prev { left:8px; } #lb .next { right:8px; }
+  #lb .close { position:absolute; top:10px; right:12px; background:rgba(255,255,255,.15); color:#fff; border:none; font-size:20px; }
+  @media (max-width:600px) { #lb .lbimg { padding:12px 8px; } #lb .nav { top:auto; bottom:70px; transform:none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>ハートウエル 商品画像<small>EC掲載用の画像をダウンロードできます</small></h1>
+  <input id="q" type="search" placeholder="品番・シリーズ番号（例: 1544）・シリーズ名で検索" autocomplete="off">
+</header>
+<main>
+  <div id="list"><div class="msg">読み込み中…</div></div>
+  <div id="detail" hidden></div>
+</main>
+<div id="lb" hidden>
+  <button class="close" onclick="lbClose()">✕</button>
+  <button class="nav prev" onclick="lbMove(-1)">‹</button>
+  <div class="lbimg"><img id="lbi" alt=""></div>
+  <button class="nav next" onclick="lbMove(1)">›</button>
+  <div class="lbbar"><span id="lbn"></span>
+    <button id="lbsel" onclick="lbToggle()">選択に追加</button>
+    <button class="primary" onclick="dlOne(FILES[LB].id)">この画像をダウンロード</button></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+let LB = -1, SERIES = [], FILES = [], CUR = null, SEL = new Set(), THUMB = {}, pending = new Set(), timer = null;
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// データは Apps Script「ハートウエル商品画像」から受け取る（ログイン状態に関係なく読める）
+const API = 'https://script.google.com/macros/s/AKfycbzKshPB5l_qMMmTW79FVKud3KnyqK9qUepuAADJxBUOLRAQlPUjR3OG9ziid2RvYzzQNw/exec';
+const ROUTE = {
+  getSeries: () => ({ api: 'series' }),
+  getSeriesFiles: s => ({ api: 'files', s }),
+  getThumbs: (s, ids) => ({ api: 'thumbs', s, ids: ids.join(',') }),
+  getFile: (s, id) => ({ api: 'file', s, id }),
+};
+async function call(fn, ...a) {
+  const r = await fetch(API + '?' + new URLSearchParams(ROUTE[fn](...a)));
+  if (!r.ok) throw new Error('通信に失敗しました（' + r.status + '）');
+  const t = await r.text();
+  try { return JSON.parse(t); } catch (e) { throw new Error('サーバーの応答を読めませんでした'); }
+}
+const thumbUrl = (th, w) => `https://lh3.googleusercontent.com/d/${th}=w${w}`;
+const norm = s => String(s).normalize('NFKC').toLowerCase();
+
+call('getSeries').then(s => {
+  SERIES = s; renderList();
+  // ?s=1544 で開かれたら、そのシリーズを最初から表示する
+  const k = new URLSearchParams(location.search).get('s');
+  if (k && SERIES.some(x => x.key === k)) open(k);
+}).catch(e => $('#list').innerHTML = '<div class="msg">読み込みに失敗しました: ' + esc(e.message) + '</div>');
+
+$('#q').addEventListener('input', () => { if (CUR) back(); renderList(); });
+
+function renderList() {
+  const q = norm($('#q').value.trim());
+  const m = q.match(/\d{4}/);
+  const hit = SERIES.filter(s => !q || (m ? s.key === m[0] : norm(s.key + ' ' + s.labels.join(' ')).includes(q)));
+  $('#list').innerHTML = hit.length ? '<div class="series">' + hit.map(s =>
+    `<div class="s" data-k="${esc(s.key)}">${/^\d{4}$/.test(s.key) ? '<b>' + s.key + '</b>' : ''}${esc(s.labels.join(' / '))}</div>`).join('') + '</div>'
+    : '<div class="msg">見つかりませんでした</div>';
+  document.querySelectorAll('.s').forEach(el => el.onclick = () => open(el.dataset.k));
+}
+
+function open(key) {
+  history.replaceState(null, '', '?s=' + encodeURIComponent(key));
+  CUR = SERIES.find(s => s.key === key); SEL.clear(); FILES = [];
+  $('#list').hidden = true; $('#detail').hidden = false;
+  $('#detail').innerHTML = '<div class="msg">画像を探しています…</div>';
+  window.scrollTo(0, 0);
+  call('getSeriesFiles', key).then(f => { if (CUR && CUR.key === key) { FILES = f; renderDetail(); } })
+    .catch(e => $('#detail').innerHTML = '<div class="msg">読み込みに失敗しました: ' + esc(e.message) + '</div>');
+}
+
+function back() { history.replaceState(null, '', location.pathname); CUR = null; $('#detail').hidden = true; $('#list').hidden = false; }
+
+function renderDetail() {
+  const title = (/^\d{4}$/.test(CUR.key) ? CUR.key + ' ' : '') + CUR.labels.join(' / ');
+  let html = `<div class="bar"><button onclick="back()">← 一覧</button><h2>${esc(title)}</h2>
+    <span>${FILES.length}枚</span>
+    <button onclick="selAll()">すべて選択</button><button onclick="SEL.clear();paint()">選択解除</button>
+    <button class="primary" id="zipb" onclick="dlZip()" disabled>選択した画像をダウンロード</button><span id="prog"></span></div>`;
+  if (!FILES.length) html += '<div class="msg">このシリーズには画像がまだありません</div>';
+  let g = null;
+  FILES.forEach(f => {
+    if (f.path !== g) { if (g !== null) html += '</div>'; g = f.path; html += `<div class="group">${esc(f.path || '（フォルダ直下）')}</div><div class="grid">`; }
+    html += `<div class="it" data-id="${f.id}"><span class="ck"></span><button class="dl" data-dl="${f.id}">↓</button>
+      <div class="ph"${f.th ? ` style="background-image:url(${thumbUrl(f.th, 300)})"` : THUMB[f.id] ? ` style="background-image:url(${THUMB[f.id]})"` : ''}></div><div class="nm" title="${esc(f.name)}">${esc(f.name)}</div></div>`;
+  });
+  if (g !== null) html += '</div>';
+  $('#detail').innerHTML = html;
+  document.querySelectorAll('.it').forEach(el => {
+    el.onclick = e => {
+      const id = el.dataset.id;
+      if (e.target.dataset.dl) return dlOne(e.target.dataset.dl);
+      if (e.target.classList.contains('ck')) { SEL.has(id) ? SEL.delete(id) : SEL.add(id); return paint(); }
+      lbOpen(FILES.findIndex(f => f.id === id));
+    };
+    if (!FILES.find(f => f.id === el.dataset.id).th) io.observe(el);   // 縮小版がまだ無いものだけ取りに行く
+  });
+  paint();
+}
+
+// 拡大表示
+function lbOpen(i) { LB = i; $('#lb').hidden = false; lbShow(); }
+function lbClose() { LB = -1; $('#lb').hidden = true; }
+function lbMove(d) { if (LB < 0) return; LB = (LB + d + FILES.length) % FILES.length; lbShow(); }
+function lbToggle() { const id = FILES[LB].id; SEL.has(id) ? SEL.delete(id) : SEL.add(id); paint(); lbShow(); }
+function lbShow() {
+  const f = FILES[LB];
+  $('#lbi').src = f.th ? thumbUrl(f.th, 1200) : (THUMB[f.id] || '');
+  $('#lbn').textContent = `${LB + 1} / ${FILES.length}　${f.name}`;
+  $('#lbsel').textContent = SEL.has(f.id) ? '選択を外す' : '選択に追加';
+}
+document.addEventListener('keydown', e => {
+  if (LB < 0) return;
+  if (e.key === 'Escape') lbClose();
+  if (e.key === 'ArrowLeft') lbMove(-1);
+  if (e.key === 'ArrowRight') lbMove(1);
+});
+$('#lb').addEventListener('click', e => { if (e.target.id === 'lb' || e.target.classList.contains('lbimg')) lbClose(); });
+
+function selAll() { FILES.forEach(f => SEL.add(f.id)); paint(); }
+function paint() {
+  document.querySelectorAll('.it').forEach(el => el.classList.toggle('on', SEL.has(el.dataset.id)));
+  const b = $('#zipb'); if (b) { b.disabled = !SEL.size; b.textContent = SEL.size ? `選択した${SEL.size}枚をダウンロード` : '選択した画像をダウンロード'; }
+}
+
+// 画面に入ったサムネイルだけ、まとめて取りに行く
+const io = new IntersectionObserver(es => {
+  es.forEach(e => { if (e.isIntersecting && !THUMB[e.target.dataset.id]) { pending.add(e.target.dataset.id); io.unobserve(e.target); } });
+  clearTimeout(timer); timer = setTimeout(flush, 150);
+}, { rootMargin: '400px' });
+
+function flush() {
+  if (!pending.size || !CUR) return;
+  const key = CUR.key;
+  const ids = [...pending];
+  pending.clear();
+  for (let i = 0; i < ids.length; i += 24) {
+    call('getThumbs', key, ids.slice(i, i + 24)).then(t => {
+      Object.assign(THUMB, t);
+      Object.keys(t).forEach(id => { const el = document.querySelector(`.it[data-id="${id}"] .ph`); if (el) el.style.backgroundImage = `url(${t[id]})`; });
+    });
+  }
+}
+
+function b64ToBlob(b64) {
+  const bin = atob(b64), arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr]);
+}
+function save(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+async function dlOne(id) {
+  $('#prog').textContent = 'ダウンロード準備中…';
+  try { const f = await call('getFile', CUR.key, id); save(b64ToBlob(f.b64), f.name); $('#prog').textContent = ''; }
+  catch (e) { $('#prog').textContent = '失敗しました: ' + e.message; }
+}
+
+async function dlZip() {
+  const ids = FILES.filter(f => SEL.has(f.id)).map(f => f.id);
+  if (ids.length === 1) return dlOne(ids[0]);
+  const zip = new JSZip(), names = {}, b = $('#zipb'); b.disabled = true;
+  let done = 0;
+  const work = async id => {
+    const f = await call('getFile', CUR.key, id);
+    let n = f.name; if (names[n]) { names[n]++; n = n.replace(/(\.\w+)$/, `_${names[n]}$1`); } else names[n] = 1;
+    zip.file(n, f.b64, { base64: true });
+    $('#prog').textContent = `準備中 ${++done} / ${ids.length}`;
+  };
+  try {
+    for (let i = 0; i < ids.length; i += 4) await Promise.all(ids.slice(i, i + 4).map(work));
+    $('#prog').textContent = 'zipを作成中…';
+    const blob = await zip.generateAsync({ type: 'blob' });
+    save(blob, `${CUR.key}_${CUR.labels[0]}_画像.zip`);
+    $('#prog').textContent = '';
+  } catch (e) { $('#prog').textContent = '失敗しました: ' + e.message; }
+  paint();
+}
+</script>
+</body>
+</html>
