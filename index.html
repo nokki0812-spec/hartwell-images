@@ -237,22 +237,32 @@ async function dlOne(id) {
 }
 
 async function dlZip() {
-  const ids = FILES.filter(f => SEL.has(f.id)).map(f => f.id);
-  if (ids.length === 1) return dlOne(ids[0]);
+  const list = FILES.filter(f => SEL.has(f.id));
+  if (list.length === 1) return dlOne(list[0].id);
   const zip = new JSZip(), names = {}, b = $('#zipb'); b.disabled = true;
   let done = 0;
-  const work = async id => {
-    const f = await call('getFile', CUR.key, id);
-    let n = f.name; if (names[n]) { names[n]++; n = n.replace(/(\.\w+)$/, `_${names[n]}$1`); } else names[n] = 1;
-    zip.file(fileName(n, f.mime), f.b64, { base64: true });
-    $('#prog').textContent = `準備中 ${++done} / ${ids.length}`;
+  const failed = [];
+  // 1枚ずつ、失敗したら3回まで取り直す。それでも取れなければ飛ばす
+  const work = async f0 => {
+    for (let t = 1; t <= 3; t++) {
+      try {
+        const f = await call('getFile', CUR.key, f0.id);
+        let n = fileName(f.name, f.mime);
+        if (names[n]) { names[n]++; n = n.replace(/(\.\w+)$/, `_${names[n]}$1`); } else names[n] = 1;
+        zip.file(n, f.b64, { base64: true });
+        $('#prog').textContent = `準備中 ${++done} / ${list.length}`;
+        return;
+      } catch (e) { if (t < 3) await new Promise(r => setTimeout(r, 1500 * t)); }
+    }
+    failed.push(f0.name);
   };
   try {
-    for (let i = 0; i < ids.length; i += 4) await Promise.all(ids.slice(i, i + 4).map(work));
+    for (let i = 0; i < list.length; i += 3) await Promise.all(list.slice(i, i + 3).map(work));
+    if (!done) throw new Error('画像を取得できませんでした。時間をおいてお試しください');
     $('#prog').textContent = 'zipを作成中…';
     const blob = await zip.generateAsync({ type: 'blob' });
     save(blob, `${CUR.key}_${CUR.labels[0]}_画像.zip`);
-    $('#prog').textContent = '';
+    $('#prog').textContent = failed.length ? `${failed.length}枚は取得できず、zipに入っていません：${failed.join('、')}（時間をおいて、その画像だけ↓でダウンロードしてください）` : '';
   } catch (e) { $('#prog').textContent = '失敗しました: ' + e.message; }
   paint();
 }
