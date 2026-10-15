@@ -77,6 +77,7 @@ const ROUTE = {
   getSeriesFiles: s => ({ api: 'files', s }),
   getThumbs: (s, ids) => ({ api: 'thumbs', s, ids: ids.join(',') }),
   getFile: (s, id) => ({ api: 'file', s, id }),
+  getAll: () => ({ api: 'all' }),
 };
 async function call(fn, ...a) {
   const r = await fetch(API + '?' + new URLSearchParams(ROUTE[fn](...a)));
@@ -87,12 +88,25 @@ async function call(fn, ...a) {
 const thumbUrl = (th, w) => `https://lh3.googleusercontent.com/d/${th}=w${w}`;
 const norm = s => String(s).normalize('NFKC').toLowerCase();
 
-call('getSeries').then(s => {
-  SERIES = s; renderList();
+// 全シリーズの画像一覧を最初にまとめて読む。前回の一覧をブラウザに覚えておき、すぐ表示してから裏で最新に入れ替える
+let ALLF = null, booted = false;
+const LS = 'hw_images_all_v1';
+function useAll(d) { SERIES = d.series; ALLF = d.files; }
+function boot() {
+  if (booted) return; booted = true;
+  renderList();
   // ?s=1544 で開かれたら、そのシリーズを最初から表示する
   const k = new URLSearchParams(location.search).get('s');
   if (k && SERIES.some(x => x.key === k)) open(k);
-}).catch(e => $('#list').innerHTML = '<div class="msg">読み込みに失敗しました: ' + esc(e.message) + '</div>');
+}
+try { const c = JSON.parse(localStorage.getItem(LS) || 'null'); if (c && c.series) { useAll(c); boot(); } } catch (e) { /* 覚えていなくてもよい */ }
+call('getAll').then(d => {
+  if (!d) throw new Error('一覧がまだありません');
+  try { localStorage.setItem(LS, JSON.stringify(d)); } catch (e) { /* 保存できなくてもよい */ }
+  useAll(d);
+  if (!booted) boot(); else if (!CUR) renderList();
+}).catch(() => call('getSeries').then(s => { if (!booted) { SERIES = s; boot(); } }))
+  .catch(e => { if (!booted) $('#list').innerHTML = '<div class="msg">読み込みに失敗しました: ' + esc(e.message) + '</div>'; });
 
 $('#q').addEventListener('input', () => { if (CUR) back(); renderList(); });
 
@@ -112,6 +126,10 @@ function open(key) {
   $('#list').hidden = true; $('#detail').hidden = false;
   $('#detail').innerHTML = '<div class="msg">画像を探しています…</div>';
   window.scrollTo(0, 0);
+  if (ALLF && ALLF[key]) {
+    FILES = ALLF[key].map(r => ({ id: r[0], name: r[1], size: r[2], path: r[3], th: r[4] }));
+    return renderDetail();
+  }
   call('getSeriesFiles', key).then(f => { if (CUR && CUR.key === key) { FILES = f; renderDetail(); } })
     .catch(e => $('#detail').innerHTML = '<div class="msg">読み込みに失敗しました: ' + esc(e.message) + '</div>');
 }
